@@ -18,13 +18,13 @@ class Page:
     # TODO: Add thumbnail loading. This will allow the load_images function to tell if this file is a valid image or not
     def __init__(self, path):
         self.path = path
-
+        self.size = 100
         self.thumb = self.make_thumbnail()
 
     def make_thumbnail(self):
         im = Image.open(self.path)
-        size = 100, 100
-        im.thumbnail(size)
+
+        im.thumbnail((self.size, self.size))
         b = io.BytesIO()
         im.save(b, 'gif')
         return tk.PhotoImage(data=b.getvalue())
@@ -35,22 +35,20 @@ class PageGroup:
     def __init__(self, pages):
         self.pages = pages
 
-    def print_pages(self):
-        for p in self.pages:
-            print(p)
-
 
 class DirectoryBrowser(tk.Frame):
     '''A tkinter widget for a labeled directory browser'''
-    def __init__(self, parent, label="Choose Folder:"):
+    def __init__(self, parent, label="Choose Folder:", callback=lambda:None):
         tk.Frame.__init__(self, parent)
+
+        self.callback = callback
 
         # Variable to access the entry text
         self.path = tk.StringVar()
 
         # Create GUI Elements for the Directory Browser Widget
         tk.Label(self, text=label).grid(column=0, row=0, sticky='nse')
-        tk.Entry(self, textvariable=self.path).grid(column=1, row=0, sticky='nsew', padx=5)
+        tk.Entry(self, textvariable=self.path, state='readonly').grid(column=1, row=0, sticky='nsew', padx=5)
         tk.Button(self, text="Browse", command=self.browse).grid(column=2, row=0, sticky='nse')
 
         # Weights
@@ -61,23 +59,68 @@ class DirectoryBrowser(tk.Frame):
     def browse(self):
         directory = filedialog.askdirectory(initialdir=os.getcwd())
         if directory:
-            self.path.set(directory)
+            if os.path.exists(directory):
+                self.path.set(directory)
+                self.callback()
+
+
+class ImageFrame(tk.Frame):
+    '''A frame that holds a canvas for loaded images. Can scroll horizontally'''
+    def __init__(self, root, *args, **kwargs):
+        tk.Frame.__init__(self, root, *args, **kwargs)
+        self.root = root
+        self.page_frames = []
+
+        self.canvas = tk.Canvas(self, background='#FFFFFF', height=125, width=600)
+        self.scrollbar = tk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
+        self.canvas.configure(xscrollcommand=self.scrollbar.set)
+
+        self.canvas.grid(row=0, column=0, sticky='ew')
+        self.scrollbar.grid(row=1, column=0, sticky='nesw')
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=0)
+
+        #self.draw_pages()
+
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        self.canvas.bind("<Button-1>", self.on_click)
+
+    def draw_pages(self):
+        # CLEAR ALL
+        self.canvas.delete('all')
+
+        for i, page in enumerate(self.pages):
+            spacing = 20
+            name = os.path.splitext(os.path.basename(page.path))[0]
+            size = page.size
+
+            # Create a frame for the image and text and save it to a list
+            frame = self.canvas.create_rectangle((size * i) + (i * spacing), 0, (size * i) + (i * spacing) + size, size)
+            self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page.thumb, tags=str(i))
+            self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text=name)
+
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+
+    def on_click(self, event):
+        item = self.canvas.find_withtag('current')
+        if self.canvas.type(item) == "image":
+            self.canvas.gettags(item)
+            print(self.pages[item])
+            self.canvas.delete(item)
 
 
 class PageZipper:
     def __init__(self, root):
         self.root = root
 
+        # Create dictionary variables for the three UI areas
+        self.left = {'valid':False, 'pages':[]}
+        self.right = {'valid':False, 'pages':[]}
+        self.output = {'valid':False, 'pages':[]}
+
         self.create_gui()
-
-        self.validate_save()
-
-
-    def validate_save(self):
-        if self.info_label_left.valid and self.info_label_right.valid and self.info_label_output.valid:
-            self.save_button['state'] = 'normal'
-        else:
-            self.save_button['state'] = 'disabled'
 
     def create_gui(self):
         root.title("Page Zipper v0.2")
@@ -91,7 +134,7 @@ class PageZipper:
         #self.menu_edit = tk.Menu(self.menubar)
         self.menu_help = tk.Menu(self.menubar)
 
-        self.menu_file.add_command(label='Exit', command=self.on_quit)
+        self.menu_file.add_command(label='Exit', command=lambda : quit())
 
         self.menubar.add_cascade(menu=self.menu_file, label='File')
         #self.menubar.add_cascade(menu=self.menu_edit, label='Edit')
@@ -100,113 +143,79 @@ class PageZipper:
         self.root.config(menu=self.menubar)
 
 
-        # Create Left Page Frame
-        self.left_pages = tk.Frame(self.root)
-        self.left_pages.grid(row=0, column=0, sticky='nesw')
-
-        tk.Label(self.left_pages, text="Left Pages").grid(row=0, column=0, sticky='nsw', padx=10)
-        self.browser_left = DirectoryBrowser(self.left_pages, "Path:")
-        self.info_label_left = tk.Label(self.left_pages, text="Select a path")
-        self.info_label_left.valid = False
-        self.info_label_left.pages = []
-
-        self.browser_left.grid(row=1, column=0, sticky='nesw', padx=10)
-        self.info_label_left.grid(row=2, column=0, sticky='nsw', padx=10)
-
-        self.left_pages.columnconfigure(0, weight=1)
+        # Create the frames and separators to pack UI elements into
+        self.left['frame'] = tk.Frame(self.root)
+        self.left['frame'].grid(row=0, column=0, sticky='nesw')
+        ttk.Separator(self.root, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=5)
+        self.right['frame'] = tk.Frame(self.root)
+        self.right['frame'].grid(row=2, column=0, sticky='nesw')
+        ttk.Separator(self.root, orient="horizontal").grid(row=3, column=0, sticky="ew", pady=5)
+        self.output['frame'] = tk.Frame(self.root)
+        self.output['frame'].grid(row=4, column=0, sticky='nesw')
 
 
-        ttk.Separator(self.root, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=10)
+        # Fill Left Pages Frame
+        tk.Label(self.left['frame'], text="Left Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
+        self.left['browser'] = DirectoryBrowser(self.left['frame'], "Path:")
+        self.left['pagesframe'] = ImageFrame(self.left['frame'])
+        self.left['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
+        self.left['pagesframe'].grid(row=2, column=0, sticky='nesw', padx=10, pady=5)
+        self.left['frame'].columnconfigure(0, weight=1)
 
-
-        # Create Right Page Frame
-        self.right_pages = tk.Frame(self.root)
-        self.right_pages.grid(row=2, column=0, sticky='nesw')
-
-        tk.Label(self.right_pages, text="Right Pages").grid(row=0, column=0, sticky='nsw', padx=10)
-        self.browser_right = DirectoryBrowser(self.right_pages, "Path:")
-        self.info_label_right = tk.Label(self.right_pages, text="Select a path")
-        self.info_label_right.valid = False
-        self.info_label_right.pages = []
-
-        self.browser_right.grid(row=1, column=0, sticky='nesw', padx=10)
-        self.info_label_right.grid(row=2, column=0, sticky='nsw', padx=10)
-
-        self.right_pages.columnconfigure(0, weight=1)
-
-
-        ttk.Separator(self.root, orient="horizontal").grid(row=3, column=0, sticky="ew", pady=10)
-
+        # Fill Right Pages Frame
+        tk.Label(self.right['frame'], text="Right Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
+        self.right['browser'] = DirectoryBrowser(self.right['frame'], "Path:")
+        self.right['pagesframe'] = ImageFrame(self.right['frame'])
+        self.right['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
+        self.right['pagesframe'].grid(row=2, column=0, sticky='nesw', padx=10, pady=5)
+        self.right['frame'].columnconfigure(0, weight=1)
 
         # Create Output Frame
-        self.output = tk.Frame(self.root)
-        self.output.grid(row=4, column=0, sticky='nesw')
-
-        tk.Label(self.output, text="Output").grid(row=0, column=0, sticky='nsw', padx=10)
-        self.browser_output = DirectoryBrowser(self.output, "Path:")
-        self.info_label_output = tk.Label(self.output, text="Select a path")
-        self.info_label_output.valid = False
-        self.info_label_output.pages = []
-
-        self.save_button = tk.Button(self.output, text="Save", command=self.save_files)
-
-        self.browser_output.grid(row=1, column=0, sticky='nesw', padx=10)
-        self.info_label_output.grid(row=2, column=0, sticky='nsw', padx=10)
-        self.save_button.grid(row=3, column=0, sticky='ew')
-
-        self.output.columnconfigure(0, weight=1)
+        tk.Label(self.output['frame'], text="Output").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
+        self.output['browser'] = DirectoryBrowser(self.output['frame'], "Path:")
+        self.save_button = tk.Button(self.output['frame'], text="Save", command=self.save_files)
+        self.output['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
+        self.save_button.grid(row=2, column=0, sticky='ew')
+        self.output['frame'].columnconfigure(0, weight=1)
 
         # For horizontal expanding of all widgets
         self.root.columnconfigure(0, weight=1)
 
-        # Add callbacks for entry validation
-        self.browser_left.path.trace('w',  lambda name, index, mode, label=self.info_label_left, sv=self.browser_left.path:self.validate_input(sv, label))
-        self.browser_right.path.trace('w',  lambda name, index, mode, label=self.info_label_right, sv=self.browser_right.path:self.validate_input(sv, label))
-        self.browser_output.path.trace('w',  lambda name, index, mode, label=self.info_label_output, sv=self.browser_output.path:self.validate_output(sv, label))
+        # Set callbacks to load images that are called when path is valid
+        self.left['browser'].callback = lambda area=self.left : self.on_input(area)
+        self.right['browser'].callback = lambda area=self.right : self.on_input(area)
 
 
-    def on_quit(self):
-        quit()
-
-    def load_images(self, directory):
+    # Create a toplevel widget that displays a progressbar as the pages are loaded
+    def load_pages(self, directory):
         paths = os.listdir(directory)
         paths.sort()
 
-        return [Page(directory + os.sep + path) for path in paths]
+        top = tk.Toplevel()
+        top.title("Loading Pages")
+        tk.Label(top, text="Loading Pages").grid(row=0, column=0, sticky='w', padx=10, pady=20)
+        progress = ttk.Progressbar(top, orient='horizontal', length=200, mode='determinate', maximum=100)
+        progress.grid(row=1, column=0, sticky='ew', padx=5)
 
-    def validate_input(self, path, label):
-        path = path.get()
-        label.valid = False
-        if path == "":
-            label['text'] = "Select a path"
-        else:
-            # Check if path is real
-            if os.path.exists(path):
-                # Check for images in folder
-                label.pages = self.load_images(path)
-                if label.pages:
-                    label['text'] = "Found " + str(len(label.pages)) + " images"
-                    label.valid = True
-                else:
-                    label['text'] = "No images found"
-                #self.valid = True
-            else:
-                label['text'] = "Invalid path"
-        self.validate_save()
+        step = float(100.0/len(paths))
 
-    def validate_output(self, path, label):
-        label.valid = False
-        path = path.get()
-        if path == "":
-            label['text'] = "Select a path"
-        else:
-            # Check if path is real
-            if os.path.exists(path):
-                label['text'] = "Valid output"
-                label.valid = True
-            else:
-                label['text'] = "Invalid path"
-        self.validate_save()
+        temp = []
+        progress['value'] = 0
+        for path in paths:
+            temp.append(Page(os.path.join(directory, path)))
+            progress['value'] += step
+
+        return temp
+
+    def on_input(self, area):
+        path = area['browser'].path.get()
+
+        # Load pages, then draw in ImageViewer
+        area['pages'] = self.load_pages(path)
+
+        if area['pages']:
+            area['pagesframe'].pages = area['pages']
+            area['pagesframe'].draw_pages()
 
     def group(self):
         # This might be easier to do if you just pop the length of list and start at n
@@ -255,7 +264,6 @@ class PageZipper:
         print("COPYING FILES")
 
         self.copy_files(merged, self.browser_output.path.get())
-
 
     def merge_lists(self, a, b):
         return [j for i in zip(a, b) for j in i]

@@ -11,7 +11,7 @@ class Page:
     # TODO: Add thumbnail loading. This will allow the load_images function to tell if this file is a valid image or not
     def __init__(self, path):
         self.path = path
-        self.size = (250, 250)
+        self.size = (150, 150)
         self.selected = False
         self.thumb = self.make_thumbnail()
 
