@@ -6,25 +6,28 @@ from tkinter import ttk
 from tkinter import filedialog
 
 from PIL import Image
+from itertools import chain
 
 import io
 import os
 import shutil
 
-grouped_page_numbers = [8, 9, 10]
+import collections
 
 class Page:
     '''A page object that contains the path to an image file, and the loaded thumbnail of that file'''
     # TODO: Add thumbnail loading. This will allow the load_images function to tell if this file is a valid image or not
+
+    size = 100
+
     def __init__(self, path):
         self.path = path
-        self.size = 100
         self.thumb = self.make_thumbnail()
 
     def make_thumbnail(self):
         im = Image.open(self.path)
 
-        im.thumbnail((self.size, self.size))
+        im.thumbnail((Page.size, Page.size))
         b = io.BytesIO()
         im.save(b, 'gif')
         return tk.PhotoImage(data=b.getvalue())
@@ -64,51 +67,116 @@ class DirectoryBrowser(tk.Frame):
                 self.callback()
 
 
-class ImageFrame(tk.Frame):
+class ThumbnailViewer(tk.Frame):
     '''A frame that holds a canvas for loaded images. Can scroll horizontally'''
     def __init__(self, root, *args, **kwargs):
         tk.Frame.__init__(self, root, *args, **kwargs)
         self.root = root
-        self.page_frames = []
+        self.pages_in = []
+        self.pages = []
+        self.hit_boxes = []
+        self.selected = []
+        self.scroll_location = None
 
         self.canvas = tk.Canvas(self, background='#FFFFFF', height=125, width=600)
         self.scrollbar = tk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
         self.canvas.configure(xscrollcommand=self.scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky='ew', columnspan=2)
+        self.scrollbar.grid(row=1, column=0, sticky='nesw', columnspan=2)
 
-        self.canvas.grid(row=0, column=0, sticky='ew')
-        self.scrollbar.grid(row=1, column=0, sticky='nesw')
+        tk.Button(self, text='Group', command=self.group).grid(row=2, column=0, sticky='ew')
+        tk.Button(self, text='Ungroup', command=self.ungroup).grid(row=2, column=1, sticky='ew')
 
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
-        self.rowconfigure(1, weight=0)
-
-        #self.draw_pages()
+        self.columnconfigure(1, weight=1)
 
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
         self.canvas.bind("<Button-1>", self.on_click)
+        self.slider = self.scrollbar.get()
 
-    def draw_pages(self):
+    def update(self):
+        self.pages = self.pages_in[:]
+
+        self.draw()
+
+    def draw(self):
         # CLEAR ALL
         self.canvas.delete('all')
+        self.hit_boxes = []
+        self.scroll_location = self.scrollbar.get()
 
         for i, page in enumerate(self.pages):
             spacing = 20
-            name = os.path.splitext(os.path.basename(page.path))[0]
-            size = page.size
+            size = Page.size
 
             # Create a frame for the image and text and save it to a list
-            frame = self.canvas.create_rectangle((size * i) + (i * spacing), 0, (size * i) + (i * spacing) + size, size)
-            self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page.thumb, tags=str(i))
-            self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text=name)
+            box = (size * i) + (i * spacing), 1, (size * i) + (i * spacing) + size, 125
+            if i in self.selected:
+                self.canvas.create_rectangle(box, fill='lightblue', outline='', tags="background")
 
-            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+            if type(page) is Page:
+                name = os.path.splitext(os.path.basename(page.path))[0]
+                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page.thumb, tags=str(i))
+                self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text=name)
+            else:
+                self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text="Group")
+
+            self.hit_boxes.append(self.canvas.create_rectangle(box, fill='', outline='', tags="hitbox"))
+
+        # TODO: add update method call
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        self.scrollbar.set(self.scroll_location[0], self.scroll_location[1])
 
     def on_click(self, event):
         item = self.canvas.find_withtag('current')
-        if self.canvas.type(item) == "image":
-            self.canvas.gettags(item)
-            print(self.pages[item])
-            self.canvas.delete(item)
+
+        # Page selected
+        if 'hitbox' in self.canvas.gettags(item):
+            index = self.hit_boxes.index(item[0])
+
+            if not index in self.selected:
+                self.selected.append(index)
+            else:
+                self.selected.remove(index)
+
+            self.draw()
+
+    def group(self):
+        if self.selected:
+            # This might be easier to do if you just pop the length of list and start at n
+            first_index = self.selected[0]
+
+            pages = [self.pages.pop(first_index) for i in reversed(self.selected)]
+            for p in pages:
+                print(p.path)
+
+            # Replace the grouped pages with the page group
+            self.pages.insert(first_index, pages)
+            self.selected = []
+            self.draw()
+
+    def ungroup(self):
+        if self.selected:
+            print(self.pages)
+
+            self.pages = self.flatten(self.pages)
+
+            self.selected = []
+            self.draw()
+
+    def flatten(self, l):
+        for el in l:
+            if isinstance(el, collections.Iterable) and not isinstance(el, (str, bytes)):
+                yield from self.flatten(el)
+            else:
+                yield el
+
+
+class PageGrouper(ThumbnailViewer):
+    def __init__(self, root, *args, **kwargs):
+        ThumbnailViewer.__init__(self, root, *args, **kwargs)
+
+
 
 
 class PageZipper:
@@ -157,7 +225,7 @@ class PageZipper:
         # Fill Left Pages Frame
         tk.Label(self.left['frame'], text="Left Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
         self.left['browser'] = DirectoryBrowser(self.left['frame'], "Path:")
-        self.left['pagesframe'] = ImageFrame(self.left['frame'])
+        self.left['pagesframe'] = ThumbnailViewer(self.left['frame'])
         self.left['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
         self.left['pagesframe'].grid(row=2, column=0, sticky='nesw', padx=10, pady=5)
         self.left['frame'].columnconfigure(0, weight=1)
@@ -165,7 +233,7 @@ class PageZipper:
         # Fill Right Pages Frame
         tk.Label(self.right['frame'], text="Right Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
         self.right['browser'] = DirectoryBrowser(self.right['frame'], "Path:")
-        self.right['pagesframe'] = ImageFrame(self.right['frame'])
+        self.right['pagesframe'] = ThumbnailViewer(self.right['frame'])
         self.right['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
         self.right['pagesframe'].grid(row=2, column=0, sticky='nesw', padx=10, pady=5)
         self.right['frame'].columnconfigure(0, weight=1)
@@ -191,6 +259,7 @@ class PageZipper:
         paths = os.listdir(directory)
         paths.sort()
 
+        """
         top = tk.Toplevel()
         top.title("Loading Pages")
         tk.Label(top, text="Loading Pages").grid(row=0, column=0, sticky='w', padx=10, pady=20)
@@ -198,12 +267,12 @@ class PageZipper:
         progress.grid(row=1, column=0, sticky='ew', padx=5)
 
         step = float(100.0/len(paths))
-
+        """
         temp = []
-        progress['value'] = 0
+        #progress['value'] = 0
         for path in paths:
             temp.append(Page(os.path.join(directory, path)))
-            progress['value'] += step
+            #progress['value'] += step
 
         return temp
 
@@ -214,21 +283,11 @@ class PageZipper:
         area['pages'] = self.load_pages(path)
 
         if area['pages']:
-            area['pagesframe'].pages = area['pages']
-            area['pagesframe'].draw_pages()
+            area['pagesframe'].pages_in = area['pages']
+            area['pagesframe'].update()
 
     def group(self):
-        # This might be easier to do if you just pop the length of list and start at n
-        first_index = grouped_page_numbers[0] - 1
-
-        pages = [self.info_label_left.pages.pop(first_index) for i in reversed(grouped_page_numbers)]
-        for p in pages:
-            print(p.path)
-
-        group = PageGroup(pages)
-
-        # Replace the grouped pages with the page group
-        self.info_label_left.pages.insert(first_index, group)
+        pass
 
     def ungroup(self, merged):
         temp = []
