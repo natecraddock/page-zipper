@@ -1,12 +1,12 @@
-# PageZipper v0.2
+# PageZipper v0.3
 # Elder Nathan Craddock 2018
 
 import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
+from tkinter import messagebox
 
 from PIL import Image
-from itertools import chain
 
 import io
 import os
@@ -18,25 +18,36 @@ class Page:
     '''A page object that contains the path to an image file, and the loaded thumbnail of that file'''
     # TODO: Add thumbnail loading. This will allow the load_images function to tell if this file is a valid image or not
 
-    size = 100
+    size = 125
 
     def __init__(self, path):
         self.path = path
         self.thumb = self.make_thumbnail()
 
+    # Returns None if no image can be loaded
     def make_thumbnail(self):
-        im = Image.open(self.path)
+        try:
+            im = Image.open(self.path)
 
-        im.thumbnail((Page.size, Page.size))
-        b = io.BytesIO()
-        im.save(b, 'gif')
-        return tk.PhotoImage(data=b.getvalue())
+            im.thumbnail((Page.size, Page.size))
+            b = io.BytesIO()
+            im.save(b, 'gif')
+            return tk.PhotoImage(data=b.getvalue())
+        except (OSError, IsADirectoryError) as err:
+            print("Error Loading Image: {0}".format(err))
+            return None
 
 
+# TODO: bring back and include group image
 class PageGroup:
     '''An object that holds a group of pages'''
     def __init__(self, pages):
         self.pages = pages
+
+class ProgressPopup():
+    '''Calls a function and displays progress with progressbar'''
+    def __init__(self, function):
+        pass
 
 
 class DirectoryBrowser(tk.Frame):
@@ -77,8 +88,9 @@ class ThumbnailViewer(tk.Frame):
         self.hit_boxes = []
         self.selected = []
         self.scroll_location = None
+        self.folder_icon = tk.PhotoImage(file="folder.png")
 
-        self.canvas = tk.Canvas(self, background='#FFFFFF', height=125, width=600)
+        self.canvas = tk.Canvas(self, background='#FFFFFF', height=Page.size + 25, width=600)
         self.scrollbar = tk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
         self.canvas.configure(xscrollcommand=self.scrollbar.set)
         self.canvas.grid(row=0, column=0, sticky='ew', columnspan=2)
@@ -110,15 +122,18 @@ class ThumbnailViewer(tk.Frame):
             size = Page.size
 
             # Create a frame for the image and text and save it to a list
-            box = (size * i) + (i * spacing), 1, (size * i) + (i * spacing) + size, 125
+            box = (size * i) + (i * spacing), 1, (size * i) + (i * spacing) + size, Page.size + 25
             if i in self.selected:
                 self.canvas.create_rectangle(box, fill='lightblue', outline='', tags="background")
 
             if type(page) is Page:
                 name = os.path.splitext(os.path.basename(page.path))[0]
-                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page.thumb, tags=str(i))
+                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page.thumb)
                 self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text=name)
             else:
+                # Draw first page of the group
+                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page[0].thumb)
+                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=self.folder_icon)
                 self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text="Group")
 
             self.hit_boxes.append(self.canvas.create_rectangle(box, fill='', outline='', tags="hitbox"))
@@ -143,12 +158,9 @@ class ThumbnailViewer(tk.Frame):
 
     def group(self):
         if self.selected:
-            # This might be easier to do if you just pop the length of list and start at n
             first_index = self.selected[0]
 
             pages = [self.pages.pop(first_index) for i in reversed(self.selected)]
-            for p in pages:
-                print(p.path)
 
             # Replace the grouped pages with the page group
             self.pages.insert(first_index, pages)
@@ -157,11 +169,9 @@ class ThumbnailViewer(tk.Frame):
 
     def ungroup(self):
         if self.selected:
-            print(self.pages)
-
-            self.pages = self.flatten(self.pages)
-
+            self.pages = list(self.flatten(self.pages))
             self.selected = []
+
             self.draw()
 
     def flatten(self, l):
@@ -191,7 +201,7 @@ class PageZipper:
         self.create_gui()
 
     def create_gui(self):
-        root.title("Page Zipper v0.2")
+        root.title("Page Zipper v0.3")
 
         # Disable tearing for the menubar
         root.option_add('*tearOff', 'FALSE')
@@ -223,7 +233,7 @@ class PageZipper:
 
 
         # Fill Left Pages Frame
-        tk.Label(self.left['frame'], text="Left Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
+        tk.Label(self.left['frame'], text="Left Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=5)
         self.left['browser'] = DirectoryBrowser(self.left['frame'], "Path:")
         self.left['pagesframe'] = ThumbnailViewer(self.left['frame'])
         self.left['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
@@ -231,7 +241,7 @@ class PageZipper:
         self.left['frame'].columnconfigure(0, weight=1)
 
         # Fill Right Pages Frame
-        tk.Label(self.right['frame'], text="Right Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
+        tk.Label(self.right['frame'], text="Right Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=5)
         self.right['browser'] = DirectoryBrowser(self.right['frame'], "Path:")
         self.right['pagesframe'] = ThumbnailViewer(self.right['frame'])
         self.right['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
@@ -239,7 +249,7 @@ class PageZipper:
         self.right['frame'].columnconfigure(0, weight=1)
 
         # Create Output Frame
-        tk.Label(self.output['frame'], text="Output").grid(row=0, column=0, sticky='nsw', padx=10, pady=10)
+        tk.Label(self.output['frame'], text="Output").grid(row=0, column=0, sticky='nsw', padx=10, pady=5)
         self.output['browser'] = DirectoryBrowser(self.output['frame'], "Path:")
         self.save_button = tk.Button(self.output['frame'], text="Save", command=self.save_files)
         self.output['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
@@ -259,7 +269,6 @@ class PageZipper:
         paths = os.listdir(directory)
         paths.sort()
 
-        """
         top = tk.Toplevel()
         top.title("Loading Pages")
         tk.Label(top, text="Loading Pages").grid(row=0, column=0, sticky='w', padx=10, pady=20)
@@ -267,12 +276,18 @@ class PageZipper:
         progress.grid(row=1, column=0, sticky='ew', padx=5)
 
         step = float(100.0/len(paths))
-        """
+
         temp = []
         #progress['value'] = 0
         for path in paths:
-            temp.append(Page(os.path.join(directory, path)))
-            #progress['value'] += step
+            p = Page(os.path.join(directory, path))
+
+            if p.thumb is not None:
+                temp.append(p)
+            top.update()
+            progress['value'] += step
+
+        top.destroy()
 
         return temp
 
@@ -286,43 +301,54 @@ class PageZipper:
             area['pagesframe'].pages_in = area['pages']
             area['pagesframe'].update()
 
-    def group(self):
-        pass
-
     def ungroup(self, merged):
         temp = []
         for p in merged:
-            if type(p) is PageGroup:
-                temp.extend(p.pages)
+            if type(p) is list:
+                temp.extend(p)
             else:
                 temp.append(p)
 
         return temp
 
     def copy_files(self, files, out, pre="img_"):
+        top = tk.Toplevel()
+        top.title("Saving Images")
+        tk.Label(top, text="Saving Images").grid(row=0, column=0, sticky='w', padx=10, pady=10)
+        progress = ttk.Progressbar(top, orient='horizontal', length=200, mode='determinate', maximum=100)
+        progress.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
+
+        step = float(100.0/len(files))
+
         for i in range(len(files)):
             new_file = pre + str(str(i + 1).zfill(len(str(len(files)))) + os.path.splitext(files[i].path)[1]) #SUPER GROSS
             new_path = os.path.join(out, new_file)
             shutil.copy2(files[i].path, new_path)
-            #print("Created file", new_path)
+
+            top.update()
+            progress['value'] += step
+
+        top.destroy()
 
     def save_files(self):
-        print("TESTING: Clear output")
-        self.clear_dir(self.browser_output.path.get())
+        output_path = self.output['browser'].path.get()
+        if self.left['pagesframe'].pages and self.right['pagesframe'].pages and output_path:
+            if messagebox.askokcancel("Proceed?", "Saving may overwrite some files in {0}".format(output_path)):
+                print("TESTING: Clear output")
+                self.clear_dir(self.output['browser'].path.get())
 
-        print("GROUPING PAGES")
-        # This is a lot of hard-coding to handle a certain case
-        self.group()
+                print("MERGING PAGE LISTS")
+                merged = self.merge_lists(self.left['pagesframe'].pages, self.right['pagesframe'].pages)
 
-        print("MERGING PAGE LISTS")
-        merged = self.merge_lists(self.info_label_right.pages, self.info_label_left.pages)
+                print("UNGROUPING PAGES")
+                merged = self.ungroup(merged)
 
-        print("UNGROUPING PAGES")
-        merged = self.ungroup(merged)
-
-        print("COPYING FILES")
-
-        self.copy_files(merged, self.browser_output.path.get())
+                print("COPYING FILES")
+                self.copy_files(merged, output_path)
+            else:
+                print("no write")
+        else:
+            messagebox.showerror("Error", "No input/output directories selected")
 
     def merge_lists(self, a, b):
         return [j for i in zip(a, b) for j in i]
