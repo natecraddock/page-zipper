@@ -1,3 +1,0 @@
-itertools chain
-potentially make my pagegroup class a list type. Would make it easier to unpack. :)
-https://stackoverflow.com/questions/8327856/how-to-extract-nested-lists
