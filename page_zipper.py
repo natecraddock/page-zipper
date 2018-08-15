@@ -13,12 +13,12 @@ import os
 import shutil
 
 import collections
+import itertools
 
 class Page:
     '''A page object that contains the path to an image file, and the loaded thumbnail of that file'''
-    # TODO: Add thumbnail loading. This will allow the load_images function to tell if this file is a valid image or not
 
-    size = 125
+    size = 250
 
     def __init__(self, path):
         self.path = path
@@ -27,12 +27,12 @@ class Page:
     # Returns None if no image can be loaded
     def make_thumbnail(self):
         try:
-            im = Image.open(self.path)
-
-            im.thumbnail((Page.size, Page.size))
+            image = Image.open(self.path)
+            image.thumbnail((Page.size, Page.size))
             b = io.BytesIO()
-            im.save(b, 'gif')
+            image.save(b, 'gif')
             return tk.PhotoImage(data=b.getvalue())
+
         except (OSError, IsADirectoryError) as err:
             print("Error Loading Image: {0}".format(err))
             return None
@@ -88,16 +88,15 @@ class ThumbnailViewer(tk.Frame):
         self.hit_boxes = []
         self.selected = []
         self.scroll_location = None
-        self.folder_icon = tk.PhotoImage(file="folder.png")
 
-        self.canvas = tk.Canvas(self, background='#FFFFFF', height=Page.size + 25, width=600)
+        self.canvas = tk.Canvas(self, background='#FFFFFF', height=int(Page.size * 0.85), width=600)
         self.scrollbar = tk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
         self.canvas.configure(xscrollcommand=self.scrollbar.set)
         self.canvas.grid(row=0, column=0, sticky='ew', columnspan=2)
         self.scrollbar.grid(row=1, column=0, sticky='nesw', columnspan=2)
 
-        tk.Button(self, text='Group', command=self.group).grid(row=2, column=0, sticky='ew')
-        tk.Button(self, text='Ungroup', command=self.ungroup).grid(row=2, column=1, sticky='ew')
+        tk.Button(self, text='Group', command=self.group).grid(row=2, column=0, sticky='w')
+        tk.Button(self, text='Ungroup', command=self.ungroup).grid(row=2, column=1, sticky='w')
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
@@ -108,7 +107,7 @@ class ThumbnailViewer(tk.Frame):
 
     def update(self):
         self.pages = self.pages_in[:]
-
+        self.selected = []
         self.draw()
 
     def draw(self):
@@ -128,13 +127,14 @@ class ThumbnailViewer(tk.Frame):
 
             if type(page) is Page:
                 name = os.path.splitext(os.path.basename(page.path))[0]
-                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page.thumb)
-                self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text=name)
+                self.canvas.create_image((size * i) + (i * spacing), spacing / 2, image=page.thumb, anchor="nw")
+                self.canvas.create_text((size * i) + (i * spacing) + (size / 2), int(Page.size * 0.75), font=("tkdefaultfont", 10), text=name, anchor="n")
+                self.canvas.create_text((size * i) + (i * spacing) + 20, int(Page.size * 0.75), font=("tkdefaultfont", 10), text=str(i + 1) + '.', anchor="n")
             else:
                 # Draw first page of the group
-                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=page[0].thumb)
-                self.canvas.create_image((size * i) + (size / 2) + (i * spacing), (size / 2), image=self.folder_icon)
-                self.canvas.create_text((size * i) + (size / 2) + (i * spacing), size, font=("tkdefaultfont", 10), text="Group")
+                self.canvas.create_image((size * i) + (i * spacing), spacing / 2, image=page[0].thumb, anchor="nw")
+                self.canvas.create_text((size * i) + (i * spacing) + (size / 2), int(Page.size * 0.75), font=("tkdefaultfont", 10), text="Group")
+                self.canvas.create_text((size * i) + (i * spacing) + 20, int(Page.size * 0.75), font=("tkdefaultfont", 10), text=str(i + 1) + '.', anchor="n")
 
             self.hit_boxes.append(self.canvas.create_rectangle(box, fill='', outline='', tags="hitbox"))
 
@@ -222,14 +222,20 @@ class PageZipper:
 
 
         # Create the frames and separators to pack UI elements into
-        self.left['frame'] = tk.Frame(self.root)
+        self.notebook = ttk.Notebook(self.root)
+        self.input_tab = tk.Frame(self.notebook)
+        self.output_tab = tk.Frame(self.notebook)
+        self.notebook.add(self.input_tab, text="Input")
+        self.notebook.add(self.output_tab, text="Output")
+        self.notebook.grid(row=0, column=0, sticky='nesw')
+
+        self.left['frame'] = tk.Frame(self.input_tab)
         self.left['frame'].grid(row=0, column=0, sticky='nesw')
-        ttk.Separator(self.root, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=5)
-        self.right['frame'] = tk.Frame(self.root)
+        ttk.Separator(self.input_tab, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=5)
+        self.right['frame'] = tk.Frame(self.input_tab)
         self.right['frame'].grid(row=2, column=0, sticky='nesw')
-        ttk.Separator(self.root, orient="horizontal").grid(row=3, column=0, sticky="ew", pady=5)
-        self.output['frame'] = tk.Frame(self.root)
-        self.output['frame'].grid(row=4, column=0, sticky='nesw')
+        self.output['frame'] = tk.Frame(self.output_tab)
+        self.output['frame'].grid(row=0, column=0, sticky='nesw')
 
 
         # Fill Left Pages Frame
@@ -258,6 +264,9 @@ class PageZipper:
 
         # For horizontal expanding of all widgets
         self.root.columnconfigure(0, weight=1)
+        self.notebook.columnconfigure(0, weight=1)
+        self.input_tab.columnconfigure(0, weight=1)
+        self.output_tab.columnconfigure(0, weight=1)
 
         # Set callbacks to load images that are called when path is valid
         self.left['browser'].callback = lambda area=self.left : self.on_input(area)
@@ -274,6 +283,8 @@ class PageZipper:
         tk.Label(top, text="Loading Pages").grid(row=0, column=0, sticky='w', padx=10, pady=20)
         progress = ttk.Progressbar(top, orient='horizontal', length=200, mode='determinate', maximum=100)
         progress.grid(row=1, column=0, sticky='ew', padx=5)
+
+        top.grab_set()
 
         step = float(100.0/len(paths))
 
@@ -318,6 +329,8 @@ class PageZipper:
         progress = ttk.Progressbar(top, orient='horizontal', length=200, mode='determinate', maximum=100)
         progress.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
 
+        top.grab_set()
+
         step = float(100.0/len(files))
 
         for i in range(len(files)):
@@ -338,7 +351,7 @@ class PageZipper:
                 self.clear_dir(self.output['browser'].path.get())
 
                 print("MERGING PAGE LISTS")
-                merged = self.merge_lists(self.left['pagesframe'].pages, self.right['pagesframe'].pages)
+                merged = self.merge_lists(self.right['pagesframe'].pages, self.left['pagesframe'].pages)
 
                 print("UNGROUPING PAGES")
                 merged = self.ungroup(merged)
@@ -351,7 +364,7 @@ class PageZipper:
             messagebox.showerror("Error", "No input/output directories selected")
 
     def merge_lists(self, a, b):
-        return [j for i in zip(a, b) for j in i]
+        return [j for i in itertools.zip_longest(a, b) for j in i if j]
 
     # Testing
     def clear_dir(self, path):
