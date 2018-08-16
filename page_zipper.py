@@ -11,9 +11,8 @@ from PIL import Image
 import io
 import os
 import shutil
-
-import collections
 import itertools
+import webbrowser
 
 class Page:
     '''A page object that contains the path to an image file, and the loaded thumbnail of that file'''
@@ -44,6 +43,7 @@ class PageGroup:
     def __init__(self, pages):
         self.pages = pages
 
+# TODO:
 class ProgressPopup():
     '''Calls a function and displays progress with progressbar'''
     def __init__(self, function):
@@ -89,7 +89,7 @@ class ThumbnailViewer(tk.Frame):
         self.selected = []
         self.scroll_location = None
 
-        self.canvas = tk.Canvas(self, background='#FFFFFF', height=int(Page.size * 0.85), width=600)
+        self.canvas = tk.Canvas(self, background='#FFFFFF', height=int(Page.size * 0.85), width=800)
         self.scrollbar = tk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
         self.canvas.configure(xscrollcommand=self.scrollbar.set)
         self.canvas.grid(row=0, column=0, sticky='ew', columnspan=2)
@@ -119,6 +119,7 @@ class ThumbnailViewer(tk.Frame):
         for i, page in enumerate(self.pages):
             spacing = 20
             size = Page.size
+            n = str(i + 1).zfill(len(str(len(self.pages))))
 
             # Create a frame for the image and text and save it to a list
             box = (size * i) + (i * spacing), 1, (size * i) + (i * spacing) + size, Page.size + 25
@@ -126,15 +127,13 @@ class ThumbnailViewer(tk.Frame):
                 self.canvas.create_rectangle(box, fill='lightblue', outline='', tags="background")
 
             if type(page) is Page:
-                name = os.path.splitext(os.path.basename(page.path))[0]
+                name = n + "  " + os.path.splitext(os.path.basename(page.path))[0]
                 self.canvas.create_image((size * i) + (i * spacing), spacing / 2, image=page.thumb, anchor="nw")
-                self.canvas.create_text((size * i) + (i * spacing) + (size / 2), int(Page.size * 0.75), font=("tkdefaultfont", 10), text=name, anchor="n")
-                self.canvas.create_text((size * i) + (i * spacing) + 20, int(Page.size * 0.75), font=("tkdefaultfont", 10), text=str(i + 1) + '.', anchor="n")
-            else:
+                self.canvas.create_text((size * i) + (i * spacing) + (size / 2), int(size * 0.75), font=("tkdefaultfont", 10), text=name, anchor="n")
+            elif type(page) is PageGroup:
                 # Draw first page of the group
-                self.canvas.create_image((size * i) + (i * spacing), spacing / 2, image=page[0].thumb, anchor="nw")
-                self.canvas.create_text((size * i) + (i * spacing) + (size / 2), int(Page.size * 0.75), font=("tkdefaultfont", 10), text="Group")
-                self.canvas.create_text((size * i) + (i * spacing) + 20, int(Page.size * 0.75), font=("tkdefaultfont", 10), text=str(i + 1) + '.', anchor="n")
+                self.canvas.create_image((size * i) + (i * spacing), spacing / 2, image=page.pages[0].thumb, anchor="nw")
+                self.canvas.create_text((size * i) + (i * spacing) + (size / 2), int(size * 0.75), font=("tkdefaultfont", 10), text=n + "  Group")
 
             self.hit_boxes.append(self.canvas.create_rectangle(box, fill='', outline='', tags="hitbox"))
 
@@ -154,32 +153,29 @@ class ThumbnailViewer(tk.Frame):
             else:
                 self.selected.remove(index)
 
+            self.selected.sort()
             self.draw()
 
+    # TODO: Groups don't handle gaps well
     def group(self):
         if self.selected:
+            print(self.selected)
             first_index = self.selected[0]
 
-            pages = [self.pages.pop(first_index) for i in reversed(self.selected)]
+            group = PageGroup([self.pages.pop(first_index) for i in reversed(self.selected)])
 
             # Replace the grouped pages with the page group
-            self.pages.insert(first_index, pages)
+            self.pages.insert(first_index, group)
             self.selected = []
             self.draw()
 
     def ungroup(self):
-        if self.selected:
-            self.pages = list(self.flatten(self.pages))
+        for i in self.selected:
+            if type(self.pages[i]) is PageGroup:
+                self.pages = self.pages[:i] + self.pages[i].pages + self.pages[i + 1:]
+
             self.selected = []
-
             self.draw()
-
-    def flatten(self, l):
-        for el in l:
-            if isinstance(el, collections.Iterable) and not isinstance(el, (str, bytes)):
-                yield from self.flatten(el)
-            else:
-                yield el
 
 
 class PageGrouper(ThumbnailViewer):
@@ -192,6 +188,8 @@ class PageGrouper(ThumbnailViewer):
 class PageZipper:
     def __init__(self, root):
         self.root = root
+        root.title("Page Zipper v0.3")
+        #root.tk.call('wm', 'iconphoto', root._w, tk.PhotoImage(file="icon.png"))
 
         # Create dictionary variables for the three UI areas
         self.left = {'valid':False, 'pages':[]}
@@ -201,34 +199,21 @@ class PageZipper:
         self.create_gui()
 
     def create_gui(self):
-        root.title("Page Zipper v0.3")
-
-        # Disable tearing for the menubar
-        root.option_add('*tearOff', 'FALSE')
-
-        # Create Menu Bar
-        self.menubar = tk.Menu(self.root)
-        self.menu_file = tk.Menu(self.menubar)
-        #self.menu_edit = tk.Menu(self.menubar)
-        self.menu_help = tk.Menu(self.menubar)
-
-        self.menu_file.add_command(label='Exit', command=lambda : quit())
-
-        self.menubar.add_cascade(menu=self.menu_file, label='File')
-        #self.menubar.add_cascade(menu=self.menu_edit, label='Edit')
-        self.menubar.add_cascade(menu=self.menu_help, label='Help')
-
-        self.root.config(menu=self.menubar)
-
-
         # Create the frames and separators to pack UI elements into
         self.notebook = ttk.Notebook(self.root)
         self.input_tab = tk.Frame(self.notebook)
         self.output_tab = tk.Frame(self.notebook)
+        self.help_tab = tk.Frame(self.notebook)
         self.notebook.add(self.input_tab, text="Input")
         self.notebook.add(self.output_tab, text="Output")
+        self.notebook.add(self.help_tab, text="Help")
         self.notebook.grid(row=0, column=0, sticky='nesw')
 
+        link = tk.Label(self.help_tab, fg="blue", text="Report an issue", cursor="hand2")
+        link.bind("<Button-1>", lambda e, l=r'https://github.com/natecraddock/page-zipper/issues': webbrowser.open(l))
+        link.grid(row=0, column=0, pady=10, sticky='ew')
+
+        # Create frames for each area
         self.left['frame'] = tk.Frame(self.input_tab)
         self.left['frame'].grid(row=0, column=0, sticky='nesw')
         ttk.Separator(self.input_tab, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=5)
@@ -237,36 +222,35 @@ class PageZipper:
         self.output['frame'] = tk.Frame(self.output_tab)
         self.output['frame'].grid(row=0, column=0, sticky='nesw')
 
-
         # Fill Left Pages Frame
-        tk.Label(self.left['frame'], text="Left Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=5)
-        self.left['browser'] = DirectoryBrowser(self.left['frame'], "Path:")
-        self.left['pagesframe'] = ThumbnailViewer(self.left['frame'])
-        self.left['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
-        self.left['pagesframe'].grid(row=2, column=0, sticky='nesw', padx=10, pady=5)
+        self.left['browser'] = DirectoryBrowser(self.left['frame'], "Left Pages:")
+        self.left['viewer'] = ThumbnailViewer(self.left['frame'])
+        self.left['browser'].grid(row=0, column=0, sticky='nesw', padx=10)
+        self.left['viewer'].grid(row=1, column=0, sticky='nesw', padx=10, pady=5)
         self.left['frame'].columnconfigure(0, weight=1)
 
         # Fill Right Pages Frame
-        tk.Label(self.right['frame'], text="Right Pages").grid(row=0, column=0, sticky='nsw', padx=10, pady=5)
-        self.right['browser'] = DirectoryBrowser(self.right['frame'], "Path:")
-        self.right['pagesframe'] = ThumbnailViewer(self.right['frame'])
-        self.right['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
-        self.right['pagesframe'].grid(row=2, column=0, sticky='nesw', padx=10, pady=5)
+        self.right['browser'] = DirectoryBrowser(self.right['frame'], "Right Pages:")
+        self.right['viewer'] = ThumbnailViewer(self.right['frame'])
+        self.right['browser'].grid(row=0, column=0, sticky='nesw', padx=10)
+        self.right['viewer'].grid(row=1, column=0, sticky='nesw', padx=10, pady=5)
         self.right['frame'].columnconfigure(0, weight=1)
 
-        # Create Output Frame
-        tk.Label(self.output['frame'], text="Output").grid(row=0, column=0, sticky='nsw', padx=10, pady=5)
-        self.output['browser'] = DirectoryBrowser(self.output['frame'], "Path:")
+        # Fill Output Frame
+        self.output['browser'] = DirectoryBrowser(self.output['frame'], "Output Path:")
         self.save_button = tk.Button(self.output['frame'], text="Save", command=self.save_files)
-        self.output['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
-        self.save_button.grid(row=2, column=0, sticky='ew')
+        self.output['browser'].grid(row=0, column=0, sticky='nesw', padx=10)
+        self.save_button.grid(row=1, column=0, sticky='ew')
         self.output['frame'].columnconfigure(0, weight=1)
 
         # For horizontal expanding of all widgets
         self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
         self.notebook.columnconfigure(0, weight=1)
+        self.notebook.rowconfigure(0, weight=1)
         self.input_tab.columnconfigure(0, weight=1)
         self.output_tab.columnconfigure(0, weight=1)
+        self.help_tab.columnconfigure(0, weight=1)
 
         # Set callbacks to load images that are called when path is valid
         self.left['browser'].callback = lambda area=self.left : self.on_input(area)
@@ -309,8 +293,8 @@ class PageZipper:
         area['pages'] = self.load_pages(path)
 
         if area['pages']:
-            area['pagesframe'].pages_in = area['pages']
-            area['pagesframe'].update()
+            area['viewer'].pages_in = area['pages']
+            area['viewer'].update()
 
     def ungroup(self, merged):
         temp = []
@@ -345,13 +329,13 @@ class PageZipper:
 
     def save_files(self):
         output_path = self.output['browser'].path.get()
-        if self.left['pagesframe'].pages and self.right['pagesframe'].pages and output_path:
+        if self.left['viewer'].pages and self.right['viewer'].pages and output_path:
             if messagebox.askokcancel("Proceed?", "Saving may overwrite some files in {0}".format(output_path)):
                 print("TESTING: Clear output")
                 self.clear_dir(self.output['browser'].path.get())
 
                 print("MERGING PAGE LISTS")
-                merged = self.merge_lists(self.right['pagesframe'].pages, self.left['pagesframe'].pages)
+                merged = self.merge_lists(self.right['viewer'].pages, self.left['viewer'].pages)
 
                 print("UNGROUPING PAGES")
                 merged = self.ungroup(merged)
