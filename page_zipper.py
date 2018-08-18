@@ -51,6 +51,46 @@ class ProgressPopup():
     def __init__(self, function):
         pass
 
+class HelpFrame(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+
+        tk.Label(parent, text="Page Zipper v0.3", font=("tkdefaultfont", 18)).grid(row=0, pady=10)
+
+        text = "Page Zipper is a tool to aid in the document capture process. It is designed to merge (zip) right and left captured pages of books."
+        tk.Message(parent, text=text, width=600).grid(row=1, pady=10)
+
+        readme = tk.Label(parent, text="View the Readme on GitHub", fg='blue', cursor='hand2')
+        readme.bind("<Button-1>", lambda e, l=r'https://github.com/natecraddock/page-zipper/': webbrowser.open(l))
+        readme.grid(row=2, pady=5, sticky='ew')
+
+
+        issue = tk.Label(parent, fg="blue", text="Report an issue on GitHub", cursor="hand2")
+        issue.bind("<Button-1>", lambda e, l=r'https://github.com/natecraddock/page-zipper/issues': webbrowser.open(l))
+        issue.grid(row=3, pady=5, sticky='ew')
+
+        tk.Label(parent, text="If you need help, email me at:").grid(row=4, pady=10)
+
+        email = tk.Label(parent, text="nzcraddock@gmail.com (click to copy to clipboard)", fg="blue", cursor="hand2")
+        email.bind("<Button-1>", lambda _: self.clip())
+        email.grid(row=5, pady=5, sticky='ew')
+
+    def clip(self):
+        print("CLIP")
+        self.clipboard_clear()
+        self.clipboard_append('nzcraddock@gmail.com')
+        self.update()
+
+class PrefixEntry(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+
+        tk.Label(self, text="File Prefix:").grid(column=0, row=0, sticky='nse')
+        tk.Entry(self).grid(column=1, row=0, sticky='nsew', padx=5)
+
+        self.columnconfigure(0, weight=0)
+        self.columnconfigure(1, weight=1)
+
 
 class DirectoryBrowser(tk.Frame):
     '''A tkinter widget for a labeled directory browser'''
@@ -99,8 +139,10 @@ class ThumbnailViewer(tk.Frame):
         self.scrollbar.grid(row=1, column=0, sticky='nesw', columnspan=2)
 
         if group:
-            tk.Button(self, text='Group', command=self.group).grid(row=2, column=0, sticky='w')
-            tk.Button(self, text='Ungroup', command=self.ungroup).grid(row=2, column=1, sticky='w')
+            frame = tk.Frame(self, bd=0)
+            frame.grid(row=2, column=0, sticky='w', pady=5)
+            tk.Button(frame, text='Group', command=self.group).grid(row=0, column=0, sticky='w')
+            tk.Button(frame, text='Ungroup', command=self.ungroup).grid(row=0, column=1, sticky='w')
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
@@ -217,18 +259,16 @@ class PageZipper:
         self.notebook.add(self.help_tab, text="Help")
         self.notebook.grid(row=0, column=0, sticky='nesw')
 
-        link = tk.Label(self.help_tab, fg="blue", text="Report an issue", cursor="hand2")
-        link.bind("<Button-1>", lambda e, l=r'https://github.com/natecraddock/page-zipper/issues': webbrowser.open(l))
-        link.grid(row=0, column=0, pady=10, sticky='ew')
+        HelpFrame(self.help_tab).grid(row=0, column=0, sticky='nesw')
 
         # Create frames for each area
         self.left['frame'] = tk.Frame(self.input_tab)
-        self.left['frame'].grid(row=0, column=0, sticky='nesw')
-        ttk.Separator(self.input_tab, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=5)
+        self.left['frame'].grid(row=0, column=0, sticky='nesw', pady=15)
+        ttk.Separator(self.input_tab, orient="horizontal").grid(row=1, column=0, sticky="ew")
         self.right['frame'] = tk.Frame(self.input_tab)
-        self.right['frame'].grid(row=2, column=0, sticky='nesw')
+        self.right['frame'].grid(row=2, column=0, sticky='nesw', pady=15)
         self.output['frame'] = tk.Frame(self.output_tab)
-        self.output['frame'].grid(row=0, column=0, sticky='nesw')
+        self.output['frame'].grid(row=0, column=0, sticky='nesw', pady=10)
 
         # Fill Left Pages Frame
         self.left['browser'] = DirectoryBrowser(self.left['frame'], "Left Pages:")
@@ -250,7 +290,11 @@ class PageZipper:
         self.save_button = tk.Button(self.output['frame'], text="Save", command=self.save_files)
         self.output['viewer'].grid(row=0, column=0, sticky='nesw', padx=10, pady=5)
         self.output['browser'].grid(row=1, column=0, sticky='nesw', padx=10)
-        self.save_button.grid(row=2, column=0, sticky='')
+
+        self.output['prefix'] = PrefixEntry(self.output['frame'])
+        self.output['prefix'].grid(row=2, column=0, sticky='nsw', padx=10, pady=5)
+
+        self.save_button.grid(row=3, column=0, sticky='', pady=5)
         self.output['frame'].columnconfigure(0, weight=1)
 
         # For horizontal expanding of all widgets
@@ -350,16 +394,7 @@ class PageZipper:
         output_path = self.output['browser'].path.get()
         if self.left['viewer'].pages and self.right['viewer'].pages and output_path:
             if messagebox.askokcancel("Proceed?", "Saving may overwrite some files in {0}".format(output_path)):
-                print("TESTING: Clear output")
                 self.clear_dir(self.output['browser'].path.get())
-
-                #print("MERGING PAGE LISTS")
-                #merged = self.merge_lists(self.right['viewer'].pages, self.left['viewer'].pages)
-
-                #print("UNGROUPING PAGES")
-                #merged = self.ungroup(merged)
-
-                print("COPYING FILES")
                 self.copy_files(self.output['viewer'].pages, output_path)
             else:
                 print("no write")
@@ -380,9 +415,6 @@ root = tk.Tk()
 PageZipper(root)
 
 root.update()
-#root.minsize(root.winfo_width() + 250, root.winfo_height() + root.menubar.winfo_reqheight())
-#root.minsize(root.winfo_width() + 250, root.winfo_reqheight())
-#root.resizable(width=True, height=False)
 root.minsize(root.winfo_reqwidth(), root.winfo_reqheight())
 root.resizable(width=True, height=True)
 root.mainloop()
