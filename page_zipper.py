@@ -46,10 +46,23 @@ class PageGroup:
         self.name = "Group"
 
 # TODO:
-class ProgressPopup():
-    '''Calls a function and displays progress with progressbar'''
-    def __init__(self, function):
-        pass
+class ProgressPopup(tk.Toplevel):
+    '''Displays progress with progressbar'''
+    def __init__(self, title, steps=100):
+        tk.Toplevel.__init__(self)
+
+        self.title(title)
+        tk.Label(self, text=title).grid(row=0, column=0, sticky='w', padx=10, pady=20)
+        self.progress = ttk.Progressbar(self, orient='horizontal', length=200, mode='determinate', maximum=100)
+        self.progress.grid(row=1, column=0, sticky='ew', padx=5)
+
+        self.grab_set()
+
+        self.step = 100.0 / steps
+
+    def next(self):
+        self.progress['value'] += self.step
+        self.update()
 
 class HelpFrame(tk.Frame):
     def __init__(self, parent):
@@ -85,8 +98,11 @@ class PrefixEntry(tk.Frame):
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
+        self.prefix = tk.StringVar()
+        self.prefix.set('page_')
+
         tk.Label(self, text="File Prefix:").grid(column=0, row=0, sticky='nse')
-        tk.Entry(self).grid(column=1, row=0, sticky='nsew', padx=5)
+        tk.Entry(self, textvariable=self.prefix).grid(column=1, row=0, sticky='nsew', padx=5)
 
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
@@ -326,27 +342,17 @@ class PageZipper:
         paths = os.listdir(directory)
         paths.sort()
 
-        top = tk.Toplevel()
-        top.title("Loading Pages")
-        tk.Label(top, text="Loading Pages").grid(row=0, column=0, sticky='w', padx=10, pady=20)
-        progress = ttk.Progressbar(top, orient='horizontal', length=200, mode='determinate', maximum=100)
-        progress.grid(row=1, column=0, sticky='ew', padx=5)
-
-        top.grab_set()
-
-        step = float(100.0/len(paths))
+        progress = ProgressPopup("Loading Pages", len(paths))
 
         temp = []
-        #progress['value'] = 0
         for path in paths:
             p = Page(os.path.join(directory, path))
 
             if p.thumb is not None:
                 temp.append(p)
-            top.update()
-            progress['value'] += step
+            progress.next()
 
-        top.destroy()
+        progress.destroy()
 
         return temp
 
@@ -370,32 +376,23 @@ class PageZipper:
         return temp[:]
 
     def copy_files(self, files, out, pre="img_"):
-        top = tk.Toplevel()
-        top.title("Saving Images")
-        tk.Label(top, text="Saving Images").grid(row=0, column=0, sticky='w', padx=10, pady=10)
-        progress = ttk.Progressbar(top, orient='horizontal', length=200, mode='determinate', maximum=100)
-        progress.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
-
-        top.grab_set()
-
-        step = float(100.0/len(files))
+        progress = ProgressPopup("Saving Images", len(files))
 
         for i in range(len(files)):
             new_file = pre + str(str(i + 1).zfill(len(str(len(files)))) + os.path.splitext(files[i].path)[1]) #SUPER GROSS
             new_path = os.path.join(out, new_file)
             shutil.copy2(files[i].path, new_path)
 
-            top.update()
-            progress['value'] += step
+            progress.next()
 
-        top.destroy()
+        progress.destroy()
 
     def save_files(self):
         output_path = self.output['browser'].path.get()
         if self.left['viewer'].pages and self.right['viewer'].pages and output_path:
             if messagebox.askokcancel("Proceed?", "Saving may overwrite some files in {0}".format(output_path)):
                 self.clear_dir(self.output['browser'].path.get())
-                self.copy_files(self.output['viewer'].pages, output_path)
+                self.copy_files(self.output['viewer'].pages, output_path, self.output['prefix'].prefix.get())
             else:
                 print("no write")
         else:
