@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 from tkinter import messagebox
+from tkinter.font import Font
 
 from PIL import Image
 
@@ -13,6 +14,7 @@ import os
 import shutil
 import itertools
 import webbrowser
+import tempfile
 
 class Page:
     '''A page object that contains the path to an image file, and the loaded thumbnail of that file'''
@@ -45,16 +47,27 @@ class PageGroup:
         self.pages = pages
         self.name = "Group"
 
-# TODO:
+
 class ProgressPopup(tk.Toplevel):
     '''Displays progress with progressbar'''
     def __init__(self, title, steps=100):
         tk.Toplevel.__init__(self)
+        self.fixed_font = Font(size=10)
+        self.line_height = self.fixed_font.metrics("linespace")
 
         self.title(title)
-        tk.Label(self, text=title).grid(row=0, column=0, sticky='w', padx=10, pady=20)
+        tk.Label(self, text=title).grid(row=0, column=0, sticky='w', padx=5, pady=20, columnspan=2)
         self.progress = ttk.Progressbar(self, orient='horizontal', length=200, mode='determinate', maximum=100)
-        self.progress.grid(row=1, column=0, sticky='ew', padx=5)
+        self.progress.grid(row=1, column=0, sticky='ew', padx=5, columnspan=2)
+
+        self.scrollbar = tk.Scrollbar(self)
+        self.scrollbar.grid(row=2, column=1, sticky='nesw', pady=10)
+
+        self.log = tk.Canvas(self, background='#FFFFFF', width=500, height=150, yscrollcommand=self.scrollbar.set)
+        self.log.grid(row=2, column=0, sticky='nesw', pady=10)
+        self.log.line_number = 0
+
+        self.scrollbar.config(command=self.log.yview)
 
         self.grab_set()
 
@@ -63,6 +76,104 @@ class ProgressPopup(tk.Toplevel):
     def next(self):
         self.progress['value'] += self.step
         self.update()
+
+    def log_message(self, line):
+        self.log.create_text(0, (self.line_height * self.log.line_number), font=self.fixed_font, text=line, anchor='nw')
+        self.log.line_number += 1
+        self.log.configure(scrollregion=self.log.bbox('all'))
+        self.log.yview_moveto(1)
+
+        self.update()
+
+class RenameFrame(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+
+        self.number = tk.IntVar()
+        self.number.set(1)
+
+        self.browser = DirectoryBrowser(self, "Rename files in folder:")
+        self.browser.grid(row=0, column=0, sticky='nesw', padx=5, columnspan=2)
+
+        tk.Label(self, text="Starting Number:").grid(column=0, row=1, sticky='nsw')
+        tk.Entry(self, textvariable=self.number).grid(column=1, row=1, sticky='nsew', padx=5, pady=5)
+
+        self.rename_button = tk.Button(self, text='Rename Files', command=self.rename)
+        self.rename_button.grid(row=2, column=0, columnspan=2, sticky='nesw', padx=5)
+
+    def rename(self):
+        f = self.browser.path.get()
+        n = self.number.get()
+
+        if os.path.exists(f) and len(os.listdir(f)) > 0:
+            self.rename_files(f, n)
+
+    # Renames files (numerically) in "files_in" with base path
+    def rename_files(self, path, n):
+        files_in = os.listdir(path)
+        p = path
+        count = n
+        files = files_in[:]
+        files.sort()
+
+        progress = ProgressPopup("Renaming Files", len(files))
+        progress.log_message("Creating backup")
+
+        backup = tempfile.TemporaryDirectory()
+
+        # Copy dir as well
+        for f in files:
+            if os.path.isfile(os.path.join(p, f)):
+                origin = os.path.join(p, f)
+                destination = os.path.join(backup.name, f)
+                shutil.copy2(origin, destination)
+            else:
+                origin = os.path.join(p, f)
+                destination = os.path.join(backup.name, f)
+                shutil.copytree(origin, destination)
+
+        digits = len(os.listdir(p)) + count
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            try:
+                progress.log_message("Copying Files")
+                # Move all of the files to a new directory, with new names
+                for f in files:
+                    if os.path.isfile(os.path.join(p, f)):
+                        end = os.path.splitext(f)[1]
+                        origin = os.path.join(p, f)
+                        new_name = str(count).zfill(len(str(digits))) + end
+                        dest = os.path.join(temporary_directory, new_name)
+
+                        os.rename(origin, dest)
+                        progress.next()
+                        progress.log_message("Renamed {0} as {1}".format(origin, new_name))
+
+                        count += 1
+                    else:
+                        end = os.path.splitext(f)[1]
+                        origin = os.path.join(p, f)
+                        dest = os.path.join(temporary_directory, f)
+                        progress.next()
+                        progress.log_message("Did not modify {0}".format(origin))
+
+                # Replace old directory with temporary directory
+                try:
+                    print(p)
+                    os.rmdir(p)
+                    #shutil.rmtree(p)
+                except:
+                    print("No dir to remove")
+
+                progress.log_message("Saving")
+                shutil.copytree(temporary_directory, p)
+
+            except:
+                progress.log_message("Rename failed, restoring backup")
+                shutil.rmtree(p)
+                shutil.copytree(backup.name, p)
+
+            progress.destroy()
 
 class HelpFrame(tk.Frame):
     def __init__(self, parent):
@@ -89,7 +200,6 @@ class HelpFrame(tk.Frame):
         email.grid(row=5, pady=5, sticky='ew')
 
     def clip(self):
-        print("CLIP")
         self.clipboard_clear()
         self.clipboard_append('nzcraddock@gmail.com')
         self.update()
@@ -260,6 +370,7 @@ class PageZipper:
         # Create dictionary variables for the three UI areas
         self.left = {'valid':False, 'pages':[]}
         self.right = {'valid':False, 'pages':[]}
+        self.utils = {}
         self.output = {'valid':False, 'pages':[]}
 
         self.create_gui()
@@ -269,9 +380,11 @@ class PageZipper:
         self.notebook = ttk.Notebook(self.root)
         self.input_tab = tk.Frame(self.notebook)
         self.output_tab = tk.Frame(self.notebook)
+        self.utils_tab = tk.Frame(self.notebook)
         self.help_tab = tk.Frame(self.notebook)
         self.notebook.add(self.input_tab, text="Input")
         self.notebook.add(self.output_tab, text="Output")
+        self.notebook.add(self.utils_tab, text="Utilities")
         self.notebook.add(self.help_tab, text="Help")
         self.notebook.grid(row=0, column=0, sticky='nesw')
 
@@ -283,6 +396,8 @@ class PageZipper:
         ttk.Separator(self.input_tab, orient="horizontal").grid(row=1, column=0, sticky="ew")
         self.right['frame'] = tk.Frame(self.input_tab)
         self.right['frame'].grid(row=2, column=0, sticky='nesw', pady=15)
+        self.utils['frame'] = tk.Frame(self.utils_tab)
+        self.utils['frame'].grid(row=0, column=0, sticky='nesw', pady=15)
         self.output['frame'] = tk.Frame(self.output_tab)
         self.output['frame'].grid(row=0, column=0, sticky='nesw', pady=10)
 
@@ -299,6 +414,10 @@ class PageZipper:
         self.right['browser'].grid(row=0, column=0, sticky='nesw', padx=10)
         self.right['viewer'].grid(row=1, column=0, sticky='nesw', padx=10, pady=5)
         self.right['frame'].columnconfigure(0, weight=1)
+
+        # Fill Utilities Frame
+        self.utils['renamer'] = RenameFrame(self.utils['frame'])
+        self.utils['renamer'].grid(row=0, column=0, sticky='nesw')
 
         # Fill Output Frame
         self.output['viewer'] = ThumbnailViewer(self.output['frame'])
@@ -327,7 +446,6 @@ class PageZipper:
         self.right['browser'].callback = lambda area=self.right : self.on_input(area)
 
     def on_viewer_update(self):
-        print("on viewer update")
         merged = self.merge_lists(self.right['viewer'].pages, self.left['viewer'].pages)
         merged = self.ungroup(merged)
 
@@ -346,11 +464,13 @@ class PageZipper:
 
         temp = []
         for path in paths:
-            p = Page(os.path.join(directory, path))
+            if not os.path.isdir(os.path.join(directory, path)):
+                p = Page(os.path.join(directory, path))
 
-            if p.thumb is not None:
-                temp.append(p)
-            progress.next()
+                if p.thumb is not None:
+                    temp.append(p)
+                progress.next()
+                progress.log_message("Created thumbnail for {}".format(path))
 
         progress.destroy()
 
@@ -384,6 +504,7 @@ class PageZipper:
             shutil.copy2(files[i].path, new_path)
 
             progress.next()
+            progress.log_message("Copied {0} to {1}".format(files[i].path, new_path))
 
         progress.destroy()
 
