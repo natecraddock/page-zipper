@@ -1,5 +1,5 @@
-# PageZipper v0.3
-# Elder Nathan Craddock 2018
+# PageZipper v1.0
+# Nathan Craddock 2018
 
 import tkinter as tk
 from tkinter import ttk
@@ -10,6 +10,7 @@ from tkinter.font import Font
 from PIL import Image
 
 import io
+import sys
 import os
 import shutil
 import itertools
@@ -95,8 +96,8 @@ class RenameFrame(tk.Frame):
         self.browser = DirectoryBrowser(self, "Rename files in folder:")
         self.browser.grid(row=0, column=0, sticky='nesw', padx=5, columnspan=2)
 
-        tk.Label(self, text="Starting Number:").grid(column=0, row=1, sticky='nsw')
-        tk.Entry(self, textvariable=self.number).grid(column=1, row=1, sticky='nsew', padx=5, pady=5)
+        self.label = tk.Label(self, text="Starting Number:").grid(column=0, row=1, sticky='nswe')
+        self.entry = tk.Entry(self, textvariable=self.number).grid(column=1, row=1, sticky='nsew', padx=5, pady=5)
 
         self.rename_button = tk.Button(self, text='Rename Files', command=self.rename)
         self.rename_button.grid(row=2, column=0, columnspan=2, sticky='nesw', padx=5)
@@ -151,17 +152,17 @@ class RenameFrame(tk.Frame):
 
                         count += 1
                     else:
-                        end = os.path.splitext(f)[1]
                         origin = os.path.join(p, f)
                         dest = os.path.join(temporary_directory, f)
+                        shutil.copytree(origin, dest)
                         progress.next()
                         progress.log_message("Did not modify {0}".format(origin))
 
                 # Replace old directory with temporary directory
                 try:
                     print(p)
-                    os.rmdir(p)
-                    #shutil.rmtree(p)
+                    #os.rmdir(p)
+                    shutil.rmtree(p)
                 except:
                     print("No dir to remove")
 
@@ -179,7 +180,7 @@ class HelpFrame(tk.Frame):
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
-        tk.Label(parent, text="Page Zipper v0.3", font=("tkdefaultfont", 18)).grid(row=0, pady=10)
+        tk.Label(parent, text="Page Zipper v1.0", font=("tkdefaultfont", 18)).grid(row=0, pady=10)
 
         text = "Page Zipper is a tool to aid in the document capture process. It is designed to merge (zip) right and left captured pages of books."
         tk.Message(parent, text=text, width=600).grid(row=1, pady=10)
@@ -209,7 +210,7 @@ class PrefixEntry(tk.Frame):
         tk.Frame.__init__(self, parent)
 
         self.prefix = tk.StringVar()
-        self.prefix.set('page_')
+        self.prefix.set('img_')
 
         tk.Label(self, text="File Prefix:").grid(column=0, row=0, sticky='nse')
         tk.Entry(self, textvariable=self.prefix).grid(column=1, row=0, sticky='nsew', padx=5)
@@ -364,7 +365,7 @@ class PageGrouper(ThumbnailViewer):
 class PageZipper:
     def __init__(self, root):
         self.root = root
-        root.title("Page Zipper v0.3")
+        root.title("Page Zipper v1.0")
         #root.tk.call('wm', 'iconphoto', root._w, tk.PhotoImage(file="icon.png"))
 
         # Create dictionary variables for the three UI areas
@@ -418,6 +419,7 @@ class PageZipper:
         # Fill Utilities Frame
         self.utils['renamer'] = RenameFrame(self.utils['frame'])
         self.utils['renamer'].grid(row=0, column=0, sticky='nesw')
+        self.utils['renamer'].columnconfigure(0, weight=1)
 
         # Fill Output Frame
         self.output['viewer'] = ThumbnailViewer(self.output['frame'])
@@ -440,6 +442,7 @@ class PageZipper:
         self.input_tab.columnconfigure(0, weight=1)
         self.output_tab.columnconfigure(0, weight=1)
         self.help_tab.columnconfigure(0, weight=1)
+        self.utils_tab.columnconfigure(0, weight=1)
 
         # Set callbacks to load images that are called when path is valid
         self.left['browser'].callback = lambda area=self.left : self.on_input(area)
@@ -535,4 +538,15 @@ PageZipper(root)
 root.update()
 root.minsize(root.winfo_reqwidth(), root.winfo_reqheight())
 root.resizable(width=True, height=True)
+
+# Ensure the icon works both from the python file, and the pyinstaller executable
+icon_file = "icon.ico"
+if not hasattr(sys, "frozen"):
+    icon_file = os.path.join(os.path.dirname(__file__), icon_file)
+else:
+    icon_file = os.path.join(sys._MEIPASS, icon_file)
+try:
+    root.iconbitmap(default=icon_file)
+except:
+    print("Icon failed")
 root.mainloop()
