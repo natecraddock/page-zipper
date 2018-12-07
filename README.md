@@ -26,6 +26,7 @@ Specify an output directory by clicking `Browse`. A filename prefix can also be 
 ## Utilities
 In the `Utilities` tab there is a renamer. It allows a numerical rename of files in a folder.
 The renamer also supports a filename prefix.
+Clicking `Rename` will create a new folder in the same location as the chosen folder. Its name will be `<folder_name>_renamed`
 
 ## Help
 The `Help` tab has a link to this readme, a support email, and a link to report issues.
