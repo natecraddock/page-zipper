@@ -34,6 +34,7 @@ The `Help` tab has a link to this readme, a support email, and a link to report 
 # Building
 ## Dependencies
 pyinstaller
+
 `pip install pyinstaller`
 
 To build a Windows executable
