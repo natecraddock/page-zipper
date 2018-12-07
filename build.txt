@@ -1,0 +1,5 @@
+For builds
+pyinstaller -F -n "Page Zipper v1.1" --add-data="icon.ico;." --icon="icon.ico" __main__.py
+for rebuilds
+pyinstaller "Page Zipper v1.1.spec" 
+

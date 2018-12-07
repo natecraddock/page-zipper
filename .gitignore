@@ -1,7 +1,5 @@
 # Files #
-icon.bmp
-icon.ico
-icon.png
+page_zipper.spec
 
 # Folders #
 ###########
@@ -10,3 +8,6 @@ left_insert
 merged
 right
 left (will crash)
+dist
+build
+__pycache__
