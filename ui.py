@@ -9,6 +9,10 @@ import webbrowser
 import widgets
 import utils
 import zipper
+import updater
+
+
+version = 1.2
 
 
 class HelpFrame(tk.Frame):
@@ -51,7 +55,7 @@ class RenameFrame(tk.Frame):
         self.number = widgets.LabeledIntEntry(self, label="Starting Number:")
         self.number.grid(row=1, column=0, sticky='nsw')
         self.number.set(1)
-        
+
         self.prefix = widgets.PrefixEntry(self)
         self.prefix.grid(row=2, column=0, sticky='nsw')
 
@@ -77,6 +81,10 @@ class PageZipperWindow:
         self.output = {'valid':False, 'pages':[]}
 
         self.create_gui()
+
+        # Check version
+
+        self.check_version()
 
     def create_gui(self):
         self.notebook = ttk.Notebook(self.root)
@@ -143,6 +151,10 @@ class PageZipperWindow:
                 print("no write")
         else:
             messagebox.showerror("Error", "No input/output directories selected")
+
+    def check_version(self):
+        global version
+        updater.check_for_updates(version)
 
 
 def create_window():
