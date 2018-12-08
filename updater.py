@@ -16,6 +16,7 @@ def get_tag_name(repository_name):
 
 
 def check_for_updates(v):
+    print("Checking for updates...", end=" ")
     repository = "natecraddock/page-zipper"
     tag = get_tag_name(repository)
 
@@ -26,10 +27,9 @@ def check_for_updates(v):
     # If latest version is greater than current version
     if version > v:
         print("Update found!")
-        result = messagebox.askyesno("Updates Found", f"An updated version of Page Zipper has been found (v{v}), would you like to download the update?")
+        result = messagebox.askyesno("Updates Found", f"An updated version of Page Zipper has been found (v{version}), would you like to download the update?")
 
         if result:
-            print("Updating")
             webbrowser.open(f"https://www.github.com/{repository}/releases/latest")
         else:
             print("Not updating")
