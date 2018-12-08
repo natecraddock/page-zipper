@@ -17,9 +17,10 @@ version = 1.2
 
 class HelpFrame(tk.Frame):
     def __init__(self, parent):
+        global version
         tk.Frame.__init__(self, parent)
 
-        tk.Label(parent, text="Page Zipper v1.1", font=("tkdefaultfont", 18)).grid(row=0, pady=10)
+        tk.Label(parent, text=f"Page Zipper v{version}", font=("tkdefaultfont", 18)).grid(row=0, pady=10)
 
         text = "Page Zipper is a tool to aid in the document capture process. It is designed to merge (zip) right and left captured pages of books."
         tk.Message(parent, text=text, width=600).grid(row=1, pady=10)
@@ -71,8 +72,9 @@ class RenameFrame(tk.Frame):
 
 class PageZipperWindow:
     def __init__(self, root):
+        global version
         self.root = root
-        self.root.title("Page Zipper v1.1")
+        self.root.title(f"Page Zipper v{version}")
 
         # Create dictionary variables for the three UI areas
         self.left = {'valid':False, 'pages':[]}
